@@ -1,0 +1,27 @@
+<html>
+<head><title>.eunit/poe_sup.COVER.html</title></head><body bgcolor=white text=black>
+<pre>
+File generated from /Users/odo/2f/poe/.eunit/poe_sup.erl by COVER 2013-01-17 at 22:13:24
+
+****************************************************************************
+
+        |  -module(poe_sup).
+        |  
+        |  -behaviour(supervisor).
+        |  
+        |  -define(SERVER, ?MODULE).
+        |  
+        |  -export([start_link/1, init/1]).
+        |  
+        |  start_link(BaseDir) -&gt;
+     5..|  	supervisor:start_link({local, ?SERVER}, ?MODULE, [BaseDir]).
+        |  
+        |  init([BaseDir]) -&gt;
+     5..|  	AppendixSup = {poe_appendix_sup, 	{poe_appendix_sup, start_link, []}, permanent, infinity, supervisor, [poe_appendix_sup, appendix_server, appendix, bisect]},
+     5..|  	PoeServer =   {poe_server,			{poe_server, start_link, [BaseDir]}, permanent, 5000, worker, [poe_server]},
+     5..|  	RanchSup = {ranch_sup, {ranch_sup, start_link, []}, permanent, 5000, supervisor, [ranch_sup]},
+     5..|      Listener = ranch:child_spec(poe_tcp_listener, 100, ranch_tcp, [{port, 5555}], poe_listener, []),
+     5..|  	RestartStrategy = {one_for_one, 10, 1},
+     5..|  	{ok, {RestartStrategy, [AppendixSup, PoeServer, RanchSup, Listener]}}.</pre>
+</body>
+</html>

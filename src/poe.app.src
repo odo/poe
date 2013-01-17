@@ -1,0 +1,12 @@
+{application, poe,
+ [
+  {description, ""},
+  {vsn, "0.1.0"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { poe, [poe]}},
+  {env, []}
+ ]}.

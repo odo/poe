@@ -1,0 +1,90 @@
+<html>
+<head><title>.eunit/poe_test.COVER.html</title></head><body bgcolor=white text=black>
+<pre>
+File generated from /Users/odo/2f/poe/.eunit/poe_test.erl by COVER 2013-01-17 at 22:13:24
+
+****************************************************************************
+
+        |  -module(poe_test).
+        |  
+        |  -ifdef(TEST).
+        |  -include_lib("eunit/include/eunit.hrl").
+        |  -define(TESTDIR, "/tmp/poe_test_dir").
+        |  -define(TESTTOPIC, &lt;&lt;"test_topic"&gt;&gt;).
+        |  -define(TESTTOPIC2, &lt;&lt;"test_topic2"&gt;&gt;).
+        |  -define(TESTDATA, &lt;&lt;"test_data"&gt;&gt;).
+        |  -define(TESTDATA2, &lt;&lt;"test_data2"&gt;&gt;).
+        |  -endif.
+        |  
+        |  -ifdef(TEST).
+        |  
+        |  store_test_() -&gt;
+     2..|      [{foreach, local,
+        |        fun test_setup/0,
+        |        fun test_teardown/1,
+        |        [
+        |          {"the protocol works", fun test_protocol/0}
+        |          , {"new server is empty", fun test_blank/0}
+        |          , {"write creates topic", fun test_create_topic/0}
+        |          , {"get next", fun test_get_next/0}
+        |          , {"test_creation_of_prtitions", fun test_partition/0}
+        |          ]}
+        |      ].
+        |  
+        |  test_protocol() -&gt;
+     1..|  	{Topic, Pointer, Limit} = {&lt;&lt;"the_topic"&gt;&gt;, 1234567, 100},
+     1..|  	Enc = poe_protocol:encode_request_pointer(Topic, Pointer, Limit),
+     1..|  	Dec = poe_protocol:decode_request(Enc),
+     1..|  	?assertEqual({request_pointer, Topic, Pointer, Limit}, Dec).
+        |  
+        |  test_blank() -&gt;
+     1..|  	?assertThrow({unknown_topic, ?TESTTOPIC}, poe:next(?TESTTOPIC, 0)).
+        |  
+        |  test_create_topic() -&gt;
+     1..|  	?assertEqual([], poe:topics()),
+     1..|  	poe:put(?TESTTOPIC, ?TESTDATA),
+     1..|  	?assertEqual([?TESTTOPIC], poe:topics()),
+     1..|  	{_, Data} = poe:next(?TESTTOPIC, 0),
+     1..|  	?assertEqual(?TESTDATA, Data),
+     1..|  	poe:put(?TESTTOPIC2, ?TESTDATA2),
+     1..|  	?assert(poe_server:write_pid(?TESTTOPIC) =/= poe_server:write_pid(?TESTTOPIC2)),
+     1..|  	?assert(poe_server:read_pid(?TESTTOPIC, 0) =/= poe_server:read_pid(?TESTTOPIC2, 0)),
+     1..|  	?assertEqual([?TESTTOPIC2, ?TESTTOPIC], poe:topics()),
+     1..|  	{_, Data2} = poe:next(?TESTTOPIC2, 0),
+     1..|  	?assertEqual(?TESTDATA2, Data2).
+        |  
+        |  test_get_next() -&gt;
+     1..|  	poe:put(?TESTTOPIC, ?TESTDATA),
+     1..|  	{Pointer, Data} = poe:next(?TESTTOPIC, 0),
+     1..|  	?assertEqual({Pointer, Data}, poe:next(?TESTTOPIC, Pointer - 1)),
+<font color=red>     0..|  	?assertEqual(not_found, poe:next(?TESTTOPIC, Pointer)),</font>
+<font color=red>     0..|  	?assertEqual(not_found, poe:next(?TESTTOPIC, Pointer + 1)).</font>
+        |  
+        |  test_partition() -&gt;
+     1..|  	Pointer = poe:put(?TESTTOPIC, ?TESTDATA),
+     1..|  	{Pointer, ?TESTDATA} = poe:next(?TESTTOPIC, 0),
+     1..|  	Reader1 = poe_server:read_pid(?TESTTOPIC, Pointer - 1),
+<font color=red>     0..|  	Writer1 = poe_server:write_pid(?TESTTOPIC),</font>
+<font color=red>     0..|  	poe_server:create_partition(?TESTTOPIC),</font>
+<font color=red>     0..|  	Reader2 = poe_server:read_pid(?TESTTOPIC, Pointer),</font>
+<font color=red>     0..|  	Writer2 = poe_server:write_pid(?TESTTOPIC),</font>
+<font color=red>     0..|  	?assert(Writer1 =/= Writer2),</font>
+<font color=red>     0..|  	?assert(Reader1 =/= Reader2),</font>
+<font color=red>     0..|  	poe:put(?TESTTOPIC, ?TESTDATA2),</font>
+<font color=red>     0..|  	{Pointer,  ?TESTDATA} = poe:next(?TESTTOPIC, Pointer - 1),</font>
+<font color=red>     0..|  	{Pointer2, ?TESTDATA2} = poe:next(?TESTTOPIC, Pointer),</font>
+<font color=red>     0..|  	not_found = poe:next(?TESTTOPIC, Pointer2).</font>
+        |  
+        |  test_setup() -&gt;
+     5..|  	os:cmd("rm -r " ++ ?TESTDIR),
+     5..|  	application:set_env(poe, dir, ?TESTDIR),
+        |      % application:start(sasl),
+     5..|      application:start(poe).
+        |  
+        |  test_teardown(_) -&gt;
+     5..|      application:stop(poe).
+        |  
+        |  -endif.
+</pre>
+</body>
+</html>

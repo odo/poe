@@ -1,0 +1,9 @@
+{application,poe,
+             [{description,[]},
+              {vsn,"0.1.0"},
+              {registered,[]},
+              {applications,[kernel,stdlib]},
+              {mod,{poe,[poe]}},
+              {env,[]},
+              {modules,[poe,poe_appendix_sup,poe_listener,poe_protocol,
+                        poe_server,poe_sup,poe_test]}]}.

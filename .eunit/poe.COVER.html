@@ -1,0 +1,77 @@
+<html>
+<head><title>.eunit/poe.COVER.html</title></head><body bgcolor=white text=black>
+<pre>
+File generated from /Users/odo/2f/poe/.eunit/poe.erl by COVER 2013-01-17 at 22:13:24
+
+****************************************************************************
+
+        |  -module(poe).
+        |  
+        |  -behaviour(application).
+        |  
+        |  %% Application callbacks
+        |  -export([start/0, start/2, stop/1]).
+        |  
+        |  %% API
+        |  -export([topics/0, put/2, next/2]).
+        |  
+        |  %% ===================================================================
+        |  %% Application callbacks
+        |  %% ===================================================================
+        |  
+        |  start() -&gt;
+<font color=red>     0..|  	application:start(poe).</font>
+        |  
+        |  start(_StartType, _StartArgs) -&gt;
+     5..|  	configure(),
+     5..|  	application:start(gproc),
+     5..|  	Dir = env_or_throw(dir),
+     5..|  	poe_sup:start_link(Dir).
+        |  
+        |  stop(_State) -&gt;
+     5..|      ok.
+        |  
+        |  % when CONFIG is specified, we are loading the config file manually
+        |  configure() -&gt;
+     5..|  	case os:getenv("CONFIG") of
+        |  		false -&gt;
+     5..|  			noop;
+        |  		FileName -&gt;
+<font color=red>     0..|  			error_logger:info_msg("Loading configuration from ~p.\n", [FileName]),</font>
+<font color=red>     0..|  			{ok, [Config]} = file:consult(FileName),</font>
+<font color=red>     0..|  			[set_app_env(C) || C &lt;- Config]</font>
+        |  	end.
+        |  
+        |  set_app_env({App, Vars}) -&gt;
+<font color=red>     0..|  	[application:set_env(App, K, V) || {K, V} &lt;- Vars].</font>
+        |  
+        |  env_or_throw(Key) -&gt;
+     5..|  	case proplists:get_value(Key, application:get_all_env(poe)) of
+        |  		undefined -&gt;
+<font color=red>     0..|  			throw({error, {atom_to_list(Key) ++ " must be configured in poes environment"}});</font>
+        |  		Value -&gt;
+     5..|  			Value
+        |  	end.
+        |  
+        |  %% ===================================================================
+        |  %% API
+        |  %% ===================================================================
+        |  
+        |  topics() -&gt;
+     3..|  	poe_server:topics().
+        |  
+        |  put(Topic, Data) -&gt;
+     4..|  	Server = poe_server:write_pid(Topic),
+     4..|  	appendix_server:put(Server, Data).
+        |  
+        |  next(Topic, Pointer) -&gt;
+     6..|  	case poe_server:read_pid(Topic, Pointer) of
+        |  		not_found -&gt;
+     1..|  			throw({unknown_topic, Topic});
+        |  		Server -&gt;
+     4..|  			appendix_server:next(Server, Pointer)
+        |  	end.
+        |  
+</pre>
+</body>
+</html>
