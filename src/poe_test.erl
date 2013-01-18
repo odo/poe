@@ -69,6 +69,7 @@ test_partition() ->
 	not_found = poe:next(?TESTTOPIC, Pointer2).
 
 test_setup() ->
+	application:start(sasl),
 	os:cmd("rm -r " ++ ?TESTDIR),
 	application:set_env(poe, dir, ?TESTDIR),
     % application:start(sasl),

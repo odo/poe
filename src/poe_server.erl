@@ -25,7 +25,7 @@
 
 -define(SERVER, ?MODULE).
 
--record(state, {base_dir, pid_table, ref_table, topics}).
+-record(state, {base_dir, topics}).
 
 %%%===================================================================
 %%% API
@@ -46,64 +46,15 @@ maybe_create_new_partitions() ->
 stop(Pid) ->
     gen_server:call(Pid, stop).
 
-% server  1           2
-%         |-----|     |-------|
-% A       !   ? 
-% B                ?  !
-% C                   !          ?
-% D ?     !
 read_pid(Topic, Timestamp) ->
-    case prev_server(Topic, Timestamp) of
-        PidPrev when is_pid(PidPrev) ->
-            case pointer_high(PidPrev) > Timestamp of
-                % case A
-                true ->
-                    PidPrev;
-                false ->
-                    case next_server(Topic, Timestamp) of
-                        % case B
-                        PidNext when is_pid(PidNext) ->
-                            PidNext;
-                        % case C
-                        not_found ->
-                            PidPrev
-                    end
-            end;
-        not_found ->
-            % case D
-            next_server(Topic, Timestamp)
-    end.
-
-prev_server(Topic, Timestamp) ->
-    case ets:prev(poe_ref_table, {Topic, Timestamp}) of
-        Key = {Topic, _} ->
-            [{Key, Pid}] = ets:lookup(poe_ref_table, Key),
-            Pid;
-        _ -> 
-            not_found
-        end.
-
-next_server(Topic, Timestamp) ->
-    case ets:next(poe_ref_table, {Topic, Timestamp}) of
-        Key = {Topic, _} ->
-            [{Key, Pid}] = ets:lookup(poe_ref_table, Key),
-            Pid;
-        _ -> 
-            not_found
-        end.
-
-pointer_high(Pid) ->
-    Key = {{p,l,appendix_server},Pid},
-    [{Key, Pid, Data}] = ets:lookup(gproc, Key),
-    proplists:get_value(pointer_high, Data).
+    appendix_server:server(Timestamp, Topic).
 
 write_pid(Topic) ->
-    % see if we have that topic, if not, create a writer
-    case ets:match(poe_ref_table, {{Topic, '_'}, '$1'}) of
-        [] ->
+    case appendix_server:server(timestamp(), Topic) of
+        not_found ->
             create_partition(Topic);
-        Pids ->
-            hd(lists:last(Pids))
+        Pid ->
+            Pid
     end.
 
 %%%===================================================================
@@ -113,19 +64,15 @@ write_pid(Topic) ->
 init([BaseDir]) ->
     file:make_dir(BaseDir),
     file:make_dir(topics_dir(BaseDir)),
-    PidTable = ets:new(poe_pid_table, [set, protected, named_table]),
-    RefTable = ets:new(poe_ref_table, [ordered_set, protected, named_table]),
     start_from_dir(BaseDir),
-    {ok, #state{base_dir = BaseDir, pid_table = PidTable, ref_table = RefTable, topics = []}}.
+    {ok, #state{base_dir = BaseDir, topics = []}}.
 
 handle_call({create_partition, Topic}, _From, State = #state{topics = Topics}) ->
-    Now = timestamp(),
-    Signature = {Topic, Now},
     TopicsDir = topics_dir(State#state.base_dir),
     TopicDir = TopicsDir ++ binary_to_list(Topic),
     file:make_dir(TopicsDir),
     file:make_dir(TopicDir),
-    Pid = start_and_register_server(TopicDir ++ "/" ++ integer_to_list(Now), Signature),
+    Pid = start_and_register_server(Topic, TopicDir ++ "/" ++ integer_to_list(timestamp())),
     {reply, Pid, State#state{topics = [Topic|Topics]}};
 
 handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics}) ->
@@ -163,36 +110,34 @@ code_change(_OldVsn, State, _Extra) ->
 topics_dir(BaseDir) ->
     BaseDir ++ "/" ++ "topics/".
 
-start_and_register_server(Path, Signature) ->
-    {ok, Pid} = poe_appendix_sup:start_child(Path),
-    ets:insert(poe_pid_table, {Pid, Signature}),
-    ets:insert(poe_ref_table, {Signature, Pid}),
+start_and_register_server(Topic, Path) ->
+    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path),
     Pid.
 
 start_from_dir(BaseDir) ->
-    PathsAndSigs = find_paths_and_signatures(BaseDir),
-    Register = fun(Path, Signature = {Topic, _}) ->
-        start_and_register_server(Path, Signature),
+    TopicsAndPaths = find_topics_and_paths(BaseDir),
+    Register = fun(Topic, Path) ->
+        start_and_register_server(Topic, Path),
         Topic
     end,   
-    [Register(Path, Signature)||{Path, Signature}<-PathsAndSigs].
+    [Register(Topic, Path)||{Topic, Path}<-TopicsAndPaths].
 
-find_paths_and_signatures(BaseDir) ->
+find_topics_and_paths(BaseDir) ->
     TopicsDir = topics_dir(BaseDir),
     {ok, Topics} = file:list_dir(TopicsDir),
-    PathAndSigFromTopic = fun(Topic) ->
+    TopicAndPathFromTopic = fun(Topic) ->
         {ok, Files} = file:list_dir(TopicsDir ++ Topic),
-        PathAndSig = fun(File, Acc) ->
+        TopicAndPath = fun(File, Acc) ->
             case binary:split(list_to_binary(File), <<"_">>) of
                 [Time, <<"index">>] ->
-                    [{TopicsDir ++ Topic ++ "/" ++ binary_to_list(Time), {list_to_binary(Topic), list_to_integer(binary_to_list(Time))}}, Acc];
+                    [{list_to_binary(Topic), TopicsDir ++ Topic ++ "/" ++ binary_to_list(Time)}, Acc];
                 _ ->
                     Acc
             end
         end,
-        lists:foldl(PathAndSig, [], Files)
+        lists:foldl(TopicAndPath, [], Files)
     end,
-    lists:flatten([PathAndSigFromTopic(T)||T<-Topics]).
+    lists:flatten([TopicAndPathFromTopic(T)||T<-Topics]).
 
 timestamp() ->
     {MegaSecs, Secs, MicroSecs} = now(),

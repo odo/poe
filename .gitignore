@@ -2,3 +2,5 @@ ebin
 .eunit
 .DS_Store
 erl_crash.dump
+ebin
+deps
