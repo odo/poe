@@ -70,8 +70,8 @@ init([BaseDir]) ->
 handle_call({create_partition, Topic}, _From, State = #state{topics = Topics}) ->
     TopicsDir = topics_dir(State#state.base_dir),
     TopicDir = TopicsDir ++ binary_to_list(Topic),
-    file:make_dir(TopicsDir),
-    file:make_dir(TopicDir),
+    mkdir(TopicsDir),
+    mkdir(TopicDir),
     Pid = start_and_register_server(Topic, TopicDir ++ "/" ++ integer_to_list(timestamp())),
     {reply, Pid, State#state{topics = [Topic|Topics]}};
 
@@ -106,6 +106,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% utilities
 %%%===================================================================
+
+mkdir(Dir) ->
+    case file:make_dir(Dir) of
+        ok ->
+            ok;
+        {error, eexist} ->
+            ok
+    end.
 
 topics_dir(BaseDir) ->
     BaseDir ++ "/" ++ "topics/".

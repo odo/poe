@@ -53,7 +53,7 @@ env_or_throw(Key) ->
 topics() ->
 	poe_server:topics().
 
-put(Topic, Data) ->
+put(Topic, Data) when byte_size(Topic) > 0 andalso byte_size(Data) > 0 ->
 	Server = poe_server:write_pid(Topic),
 	appendix_server:put(Server, Data).
 
