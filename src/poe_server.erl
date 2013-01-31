@@ -2,7 +2,7 @@
 %% and dispatching read and write requests.
 
 -module(poe_server).
--behaviour(gen_server).
+-behaviour(gen_server2).
 
 %% API
 -export([start_link/1, stop/1]).
@@ -14,9 +14,10 @@
     , read_pid/2
     ]).
 
-%% gen_server callbacks
+%% gen_server2 callbacks
 -export([
     init/1
+    , prioritise_info/2
     , handle_call/3
     , handle_cast/2
     , handle_info/2
@@ -32,49 +33,63 @@
 %%%===================================================================
 
 start_link(BaseDir) ->
-    gen_server:start_link({local, ?SERVER}, ?MODULE, [BaseDir], []).
+    gen_server2:start_link({local, ?SERVER}, ?MODULE, [BaseDir], []).
 
 create_partition(Topic) ->
-    gen_server:call(?SERVER, {create_partition, Topic}).
+    gen_server2:call(?SERVER, {create_partition, Topic}).
 
 topics() ->
-    gen_server:call(?SERVER, {topics}).
+    gen_server2:call(?SERVER, {topics}).
 
 maybe_create_new_partitions() ->
-    gen_server:call(?SERVER, {maybe_create_new_partitions}).
+    gen_server2:call(?SERVER, {maybe_create_new_partitions}).
 
 stop(Pid) ->
-    gen_server:call(Pid, stop).
+    gen_server2:call(Pid, stop).
 
 read_pid(Topic, Timestamp) ->
-    appendix_server:server(Timestamp, Topic).
+    gen_server2:call(?SERVER, {read_pid, Topic, Timestamp}).
 
 write_pid(Topic) ->
-    case appendix_server:server(timestamp(), Topic) of
-        not_found ->
-            create_partition(Topic);
-        Pid ->
-            Pid
-    end.
+    gen_server2:call(?SERVER, {write_pid, Topic}).
 
 %%%===================================================================
-%%% gen_server callbacks
+%%% gen_server2 callbacks
 %%%===================================================================
 
 init([BaseDir]) ->
-    file:make_dir(BaseDir),
-    file:make_dir(topics_dir(BaseDir)),
+    % we are trapping exits here to monitor the appendix_servers
+    process_flag(trap_exit, true),
+    ets:new(poe_server_tracker, [bag, named_table, protected]),
+    mkdir(BaseDir),
+    mkdir(topics_dir(BaseDir)),
     start_from_dir(BaseDir),
     {ok, #state{base_dir = BaseDir, topics = []}}.
 
-handle_call({create_partition, Topic}, _From, State = #state{topics = Topics}) ->
-    TopicsDir = topics_dir(State#state.base_dir),
-    TopicDir = TopicsDir ++ binary_to_list(Topic),
-    mkdir(TopicsDir),
-    mkdir(TopicDir),
-    Pid = start_and_register_server(Topic, TopicDir ++ "/" ++ integer_to_list(timestamp())),
-    {reply, Pid, State#state{topics = [Topic|Topics]}};
+prioritise_info({'EXIT', _Pid, _Reason}, _State) ->
+    1;
 
+prioritise_info(_Msg, _State) ->
+    0.
+
+handle_call({read_pid, Topic, Timestamp}, _From, State) ->
+    Pid = appendix_server:server(Timestamp, Topic),
+    {reply, Pid, State};
+
+handle_call({write_pid, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
+    {Pid, TopicsNew} =
+    case appendix_server:server(timestamp(), Topic) of
+        not_found ->
+            {create_partition_internal(Topic, BaseDir), [Topic|Topics]};
+        P ->
+            {P, Topics}
+    end,
+    {reply, Pid, State#state{topics = TopicsNew}};
+
+handle_call({create_partition, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
+    Pid = create_partition_internal(Topic, BaseDir),
+    {reply, Pid, State#state{topics = [Topic|Topics]}};
+ 
 handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics}) ->
     Servers = appendix_server:servers(),
     MCNP = fun(T, Acc) ->
@@ -94,7 +109,15 @@ handle_call({topics}, _From, State = #state{topics = Topics}) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info(_Info, State) ->
+handle_info({'EXIT', Pid, _Reason}, State) ->
+    error_logger:info_msg("~p: ~p just died. Restarting...\n", [?MODULE, Pid]),
+    [{_Pid, {Topic, Path}}] = ets:lookup(poe_server_tracker, Pid),
+    ets:delete(poe_server_tracker, Pid),
+    appendix_server:repair(Path),
+    _PidNew = start_and_register_server(Topic, Path),
+    {noreply, State};
+
+handle_info(Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -106,6 +129,14 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 %%% utilities
 %%%===================================================================
+
+create_partition_internal(Topic, BaseDir) ->
+    mkdir(BaseDir),
+    mkdir(topics_dir(BaseDir)),
+    TopicDir = topics_dir(BaseDir) ++ binary_to_list(Topic),
+    mkdir(TopicDir),
+    FileName = TopicDir ++ "/" ++ integer_to_list(timestamp()),
+    start_and_register_server(Topic, FileName).
 
 mkdir(Dir) ->
     case file:make_dir(Dir) of
@@ -120,6 +151,8 @@ topics_dir(BaseDir) ->
 
 start_and_register_server(Topic, Path) ->
     {ok, Pid} = poe_appendix_sup:start_child(Topic, Path),
+    link(Pid),
+    ets:insert(poe_server_tracker, {Pid, {Topic, Path}}),
     Pid.
 
 start_from_dir(BaseDir) ->

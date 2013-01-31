@@ -6,6 +6,7 @@
 -export([start/0, start/2, stop/1]).
 
 %% API
+-compile({no_auto_import,[put/2]}).
 -export([topics/0, put/2, next/2]).
 
 %% ===================================================================
@@ -55,13 +56,27 @@ topics() ->
 
 put(Topic, Data) when byte_size(Topic) > 0 andalso byte_size(Data) > 0 ->
 	Server = poe_server:write_pid(Topic),
-	appendix_server:put(Server, Data).
+	try
+		appendix_server:put(Server, Data)
+	catch
+		exit:{noproc, _Reason} ->
+			error_logger:info_msg("Process for ~p is dead, retrying..\n", [Topic]),
+			timer:sleep(20),
+			put(Topic, Data)
+	end.
 
 next(Topic, Pointer) ->
 	case poe_server:read_pid(Topic, Pointer) of
 		not_found ->
 			throw({unknown_topic, Topic});
 		Server ->
-			appendix_server:next(Server, Pointer)
+			try
+				appendix_server:next(Server, Pointer)
+			catch
+				exit:{noproc, _Reason} ->
+					error_logger:info_msg("Process for ~p is dead, retrying..\n", [Topic]),
+					timer:sleep(20),
+					next(Topic, Pointer)
+			end
 	end.
 
