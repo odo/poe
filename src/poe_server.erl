@@ -61,6 +61,7 @@ init([BaseDir]) ->
     % we are trapping exits here to monitor the appendix_servers
     process_flag(trap_exit, true),
     ets:new(poe_server_tracker, [bag, named_table, protected]),
+    ets:new(poe_server_dir, [ordered_set, named_table, protected]),
     mkdir(BaseDir),
     mkdir(topics_dir(BaseDir)),
     start_from_dir(BaseDir),
@@ -73,14 +74,13 @@ prioritise_info(_Msg, _State) ->
     0.
 
 handle_call({read_pid, Topic, Timestamp}, _From, State) ->
-    Pid = appendix_server:server(Timestamp, Topic),
-    {reply, Pid, State};
+    {reply, server(Topic, Timestamp), State};
 
 handle_call({write_pid, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
     {Pid, TopicsNew} =
-    case appendix_server:server(timestamp(), Topic) of
+    case server(Topic, timestamp()) of
         not_found ->
-            {create_partition_internal(Topic, BaseDir), [Topic|Topics]};
+            {create_partition_internal(Topic, BaseDir), lists:usort([Topic|Topics])};
         P ->
             {P, Topics}
     end,
@@ -88,7 +88,7 @@ handle_call({write_pid, Topic}, _From, State = #state{topics = Topics, base_dir 
 
 handle_call({create_partition, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
     Pid = create_partition_internal(Topic, BaseDir),
-    {reply, Pid, State#state{topics = [Topic|Topics]}};
+    {reply, Pid, State#state{topics = lists:usort([Topic|Topics])}};
  
 handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics}) ->
     Servers = appendix_server:servers(),
@@ -111,13 +111,13 @@ handle_cast(_Msg, State) ->
 
 handle_info({'EXIT', Pid, _Reason}, State) ->
     error_logger:info_msg("~p: ~p just died. Restarting...\n", [?MODULE, Pid]),
-    [{_Pid, {Topic, Path}}] = ets:lookup(poe_server_tracker, Pid),
-    ets:delete(poe_server_tracker, Pid),
+    [{Pid, {Topic, Path, _}}] = ets:lookup(poe_server_tracker, Pid),
+    unregister_server(Pid),
     appendix_server:repair(Path),
     _PidNew = start_and_register_server(Topic, Path),
     {noreply, State};
 
-handle_info(Info, State) ->
+handle_info(_, State) ->
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -125,6 +125,52 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+%%%===================================================================
+%%% server registration and lookup
+%%%===================================================================
+
+start_and_register_server(Topic, Path) ->
+    reregister_writer(Topic),
+    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path),
+    register_server(Pid, Topic, Path),
+    Pid.
+
+register_server(Pid, Topic, Path) ->
+    link(Pid),
+    Info = appendix_server:info(Pid),
+    DirInfo = {proplists:get_value(id, Info), proplists:get_value(pointer_high, Info)},
+    ets:insert(poe_server_tracker, {Pid, {Topic, Path, DirInfo}}),
+    ets:insert(poe_server_dir, {DirInfo, Pid}).
+
+unregister_server(Pid) ->
+    [{Pid, {_, _, DirInfo}}] = ets:lookup(poe_server_tracker, Pid),
+    ets:delete(poe_server_tracker, Pid),
+    ets:delete(poe_server_dir, DirInfo).
+
+reregister_server(Pid) ->
+    [{Pid, {Topic, Path, _}}] = ets:lookup(poe_server_tracker, Pid),
+    unregister_server(Pid),
+    register_server(Pid, Topic, Path).
+
+% we have to update the current write server so it
+% can receive reads
+reregister_writer(Topic) ->
+    case server(Topic, timestamp()) of
+        Pid when is_pid(Pid) ->
+            reregister_server(Pid);
+        _ ->
+            noop
+    end.
+
+server(Topic, Timestamp) ->
+    case ets:next(poe_server_dir, {Topic, Timestamp}) of
+        Key = {Topic, _} ->
+            [{_, Pid}] = ets:lookup(poe_server_dir, Key), 
+            Pid;
+        _ ->
+            not_found
+    end.
 
 %%%===================================================================
 %%% utilities
@@ -148,12 +194,6 @@ mkdir(Dir) ->
 
 topics_dir(BaseDir) ->
     BaseDir ++ "/" ++ "topics/".
-
-start_and_register_server(Topic, Path) ->
-    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path),
-    link(Pid),
-    ets:insert(poe_server_tracker, {Pid, {Topic, Path}}),
-    Pid.
 
 start_from_dir(BaseDir) ->
     TopicsAndPaths = find_topics_and_paths(BaseDir),

@@ -45,7 +45,7 @@ test_create_topic() ->
 	poe:put(?TESTTOPIC2, ?TESTDATA2),
 	?assert(poe_server:write_pid(?TESTTOPIC) =/= poe_server:write_pid(?TESTTOPIC2)),
 	?assert(poe_server:read_pid(?TESTTOPIC, 0) =/= poe_server:read_pid(?TESTTOPIC2, 0)),
-	?assertEqual([?TESTTOPIC2, ?TESTTOPIC], poe:topics()),
+	?assertEqual([?TESTTOPIC, ?TESTTOPIC2], poe:topics()),
 	{_, Data2} = poe:next(?TESTTOPIC2, 0),
 	?assertEqual(?TESTDATA2, Data2).
 
@@ -62,7 +62,7 @@ test_partition() ->
 	Reader1 = poe_server:read_pid(?TESTTOPIC, Pointer - 1),
 	Writer1 = poe_server:write_pid(?TESTTOPIC),
 	poe_server:create_partition(?TESTTOPIC),
-	Reader1 = poe_server:read_pid(?TESTTOPIC, 0),
+	?assertEqual(Reader1, poe_server:read_pid(?TESTTOPIC, 0)),
 	Reader1 = poe_server:read_pid(?TESTTOPIC, Pointer - 1),
 	Reader2 = poe_server:read_pid(?TESTTOPIC, Pointer),
 	Writer2 = poe_server:write_pid(?TESTTOPIC),
@@ -76,7 +76,7 @@ test_partition() ->
 test_crash() ->
 	Pointer = poe:put(?TESTTOPIC, ?TESTDATA),
 	?assertEqual({Pointer, ?TESTDATA}, poe:next(?TESTTOPIC, 0)),
-	[{_, Pid}] = appendix_server:servers(?TESTTOPIC),
+	Pid = poe_server:write_pid(?TESTTOPIC),
 	crash(Pid),
 	?assertEqual({Pointer, ?TESTDATA}, poe:next(?TESTTOPIC, 0)),
 	Pid2 = poe_server:create_partition(?TESTTOPIC),
