@@ -18,16 +18,13 @@ loop(Socket, ranch_tcp) ->
 					{FileName, Position, LengthData} ->
 						Length = LengthData + byte_size(Header1),
 						Header2 = poe_protocol:add_length(Length, Header1),
-						error_logger:info_msg("~p sending Header: ~p\n", [?MODULE, Header2]),
 						gen_tcp:send(Socket, Header2),
 						{ok, File} = file:open(FileName, [raw, binary]),
-						error_logger:info_msg("~p sending ~p Bytes of payload.\n", [?MODULE, LengthData]),
 						{ok, LengthData} = file:sendfile(File, Socket, Position, LengthData, []),
 						file:close(File);
 					not_found ->
 						Length = byte_size(Header1),
 						Header2 = poe_protocol:add_length(Length, Header1),
-						error_logger:info_msg("~p sending Header: ~p\n", [?MODULE, Header2]),
 						gen_tcp:send(Socket, Header2)
 				end,
 				loop(Socket, ranch_tcp);

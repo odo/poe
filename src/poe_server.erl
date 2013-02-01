@@ -169,7 +169,13 @@ server(Topic, Timestamp) ->
             [{_, Pid}] = ets:lookup(poe_server_dir, Key), 
             Pid;
         _ ->
-            not_found
+            case ets:prev(poe_server_dir, {Topic, <<>>}) of
+                Key = {Topic, _} ->
+                    [{_, Pid}] = ets:lookup(poe_server_dir, Key), 
+                    Pid;
+                _ ->
+                    not_found
+            end
     end.
 
 %%%===================================================================

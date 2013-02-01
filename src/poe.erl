@@ -18,7 +18,6 @@ start() ->
 
 start(_StartType, _StartArgs) ->
 	configure(),
-	application:start(gproc),
 	Dir = env_or_throw(dir),
 	poe_sup:start_link(Dir).
 

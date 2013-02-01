@@ -10,7 +10,7 @@ start_link() ->
 	supervisor:start_link({local, ?SERVER}, ?MODULE, []).
 
 start_child(Topic, Dir) ->
-	supervisor:start_child(?SERVER, [Dir, Topic, []]).
+	supervisor:start_child(?SERVER, [Dir, Topic, [{trap_exit, true}]]).
 
 init([]) ->
 	AppendixServer = {appendix_server, {appendix_server, start_link_with_id, []}, temporary, 5000, worker, [appendix_server, bisect]},
