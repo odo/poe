@@ -24,6 +24,12 @@
     , terminate/2
     , code_change/3]).
 
+%% Profiling
+-export([
+    eprofile_writer/1, eprofile_writer/2
+    , fprofile_writer/2
+    ]).
+
 -define(SERVER, ?MODULE).
 
 -record(state, {base_dir, topics}).
@@ -236,3 +242,26 @@ maybe_create_new_partition(Topic, Servers) ->
     io:format("ServerData for ~p :~p\n", [Topic, ServerData]),
     true.
 
+%% ===================================================================
+%% Profiling
+%% ===================================================================
+
+eprofile_writer(Topic) ->
+    eprofile_writer(Topic, 10).
+
+eprofile_writer(Topic, Duration) ->
+    eprof:start(),
+    eprof:start_profiling([poe_server:write_pid(Topic)]),
+    error_logger:info_msg("Profiling writer for topic ~p for ~p s.\n", [Topic, Duration]),
+    timer:sleep(Duration * 1000),
+    eprof:stop_profiling(),
+    eprof:analyze().
+
+fprofile_writer(Topic, Calls) ->
+    Seq = lists:seq(1, Calls),
+    File = "/tmp/poe_server_profile",
+    os:cmd("rm " ++ File),
+    fprof:trace([start, {procs, [poe_server:write_pid(Topic)]},{file, File}]),
+    [poe:put(Topic, <<"this is some little bit of data...">>)||_<-Seq],
+    fprof:profile({file, File}),
+    fprof:analyse().

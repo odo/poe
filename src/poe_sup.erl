@@ -13,6 +13,6 @@ init([BaseDir]) ->
 	AppendixSup = {poe_appendix_sup, 	{poe_appendix_sup, start_link, []}, permanent, infinity, supervisor, [poe_appendix_sup, appendix_server, appendix, bisect]},
 	PoeServer =   {poe_server,			{poe_server, start_link, [BaseDir]}, permanent, 5000, worker, [poe_server]},
 	RanchSup = {ranch_sup, {ranch_sup, start_link, []}, permanent, 5000, supervisor, [ranch_sup]},
-    Listener = ranch:child_spec(poe_tcp_listener, 100, ranch_tcp, [{port, 5555}], poe_listener, []),
+    Listener = ranch:child_spec(poe_tcp_listener, 1, ranch_tcp, [{port, 5555}], poe_listener, []),
 	RestartStrategy = {one_for_one, 10, 1},
 	{ok, {RestartStrategy, [AppendixSup, PoeServer, RanchSup, Listener]}}.

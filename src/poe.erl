@@ -78,4 +78,3 @@ next(Topic, Pointer) ->
 					next(Topic, Pointer)
 			end
 	end.
-
