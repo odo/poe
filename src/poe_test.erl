@@ -135,8 +135,8 @@ command(_S) ->
     	, {call, ?MODULE, proper_test_put_by_socket, [topic(), [binary()]]}
         , {call, ?MODULE, proper_test_get_all_by_next, [topic()]}
         , {call, ?MODULE, proper_test_get_all_by_socket, [topic(), limit()]}
-        % , {call, ?MODULE, proper_test_create_partition, [topic()]}
-        , {call, ?MODULE, proper_test_kill_server, [topic()]}
+        , {call, ?MODULE, proper_test_create_partition, [topic()]}
+        % , {call, ?MODULE, proper_test_kill_server, [topic()]}
 	]).
 
 precondition(State, {call, ?MODULE, proper_test_get_all_by_next, [Topic]}) ->
@@ -193,8 +193,8 @@ postcondition(_, {call, _, proper_test_put, [_, _]}, Result) ->
 postcondition(_, {call, _, proper_test_put_by_socket, [_, _]}, Result) ->
     is_integer(Result);
 
-% postcondition(_, {call, _, proper_test_create_partition, [_]}, Result) ->
-%     Result =:= noop orelse is_pid(Result);
+postcondition(_, {call, _, proper_test_create_partition, [_]}, Result) ->
+    Result =:= noop orelse is_pid(Result);
 
 postcondition(State, {call, _, proper_test_get_all_by_socket, [Topic, _]}, Result) ->
 	match_or_log(Result, proplists:get_value(Topic, State#proper_state.data, []), {proper_test_get_all_by_socket, Topic});
@@ -253,15 +253,14 @@ proper_test_get_all_by_socket(Topic, Limit, Pointer, Socket) ->
 			[[D||{_P, D} <-Data]|proper_test_get_all_by_socket(Topic, Limit, PointerNew, Socket)]
 	end.
 
-% proper_test_create_partition(Topic) ->
-% 	% we are not creating a new partion when the latest one is empty
-% 	poe_serserver(Topic, timestamp()),
-% 	case proplists:get_value(count, appendix_server:info(poe_server:write_pid(Topic))) of
-% 		0 ->
-% 			noop;
-% 		_ ->
-% 			poe_server:create_partition(Topic)
-% 	end.
+proper_test_create_partition(Topic) ->
+	% we are not creating a new partion when the latest one is empty
+	case proplists:get_value(count, appendix_server:info(poe_server:write_pid(Topic))) of
+		0 ->
+			noop;
+		_ ->
+			poe_server:create_partition(Topic)
+	end.
 
 proper_test_kill_server(Topic) ->
 	Pids = [P||[{P, {T, _, _}}]<-ets:match(poe_server_tracker, '$1'), T =:= Topic],

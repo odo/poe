@@ -31,7 +31,10 @@
     ]).
 
 -define(SERVER, ?MODULE).
-
+-define(COUNTLIMIT, 1000000).
+-define(SIZELIMIT, 64 * 1024 * 1024).
+-define(CHECKINTERVAL, 1 * 1000).
+-define(WORKERTIMEOUT, 10 * 1000).
 -record(state, {base_dir, topics}).
 
 %%%===================================================================
@@ -71,6 +74,7 @@ init([BaseDir]) ->
     mkdir(BaseDir),
     mkdir(topics_dir(BaseDir)),
     start_from_dir(BaseDir),
+    timer:apply_interval(?CHECKINTERVAL, poe_server, maybe_create_new_partitions, []),
     {ok, #state{base_dir = BaseDir, topics = []}}.
 
 prioritise_info({'EXIT', _Pid, _Reason}, _State) ->
@@ -80,11 +84,11 @@ prioritise_info(_Msg, _State) ->
     0.
 
 handle_call({read_pid, Topic, Timestamp}, _From, State) ->
-    {reply, server(Topic, Timestamp), State};
+    {reply, read_pid_internal(Topic, Timestamp), State};
 
 handle_call({write_pid, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
     {Pid, TopicsNew} =
-    case server(Topic, timestamp()) of
+    case write_pid_internal(Topic) of
         not_found ->
             {create_partition_internal(Topic, BaseDir), lists:usort([Topic|Topics])};
         P ->
@@ -96,18 +100,23 @@ handle_call({create_partition, Topic}, _From, State = #state{topics = Topics, ba
     Pid = create_partition_internal(Topic, BaseDir),
     {reply, Pid, State#state{topics = lists:usort([Topic|Topics])}};
  
-handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics}) ->
-    Servers = appendix_server:servers(),
-    MCNP = fun(T, Acc) ->
-        case maybe_create_new_partition(T, Servers) of
+handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
+    WritePidsAndTopics = [{write_pid_internal(T), T}||T<-Topics],
+    MaybeCreteNewPartition = fun(WriterPid, Topic) ->
+        Info = appendix_server:info(WriterPid),
+        case proplists:get_value(count, Info) >= ?COUNTLIMIT orelse proplists:get_value(size, Info) >= ?SIZELIMIT of
             true ->
-                [T|Acc];
+                error_logger:info_msg("starting new server because of:~p\n", [Info]),
+                WriterPidNew = create_partition_internal(Topic, BaseDir),
+                appendix_server:sync(WriterPid),
+                WriterPidNew;
             false ->
-                Acc
+                noop
         end
-    end, 
-    TopicsWithNewPartitions = lists:foldl(MCNP, [], Topics),
-    {reply, TopicsWithNewPartitions, State};
+    end,
+    PidsNewAndNoop = lists:foldl(fun({P, T}, Acc) -> [MaybeCreteNewPartition(P, T)|Acc] end, [], WritePidsAndTopics),
+    PidsNew = [PNAN||PNAN<-PidsNewAndNoop, is_pid(PNAN)],
+    {reply, PidsNew, State};
 
 handle_call({topics}, _From, State = #state{topics = Topics}) ->
     {reply, Topics, State}.
@@ -123,7 +132,8 @@ handle_info({'EXIT', Pid, _Reason}, State) ->
     _PidNew = start_and_register_server(Topic, Path),
     {noreply, State};
 
-handle_info(_, State) ->
+handle_info(Msg, State) ->
+    error_logger:info_msg("~p git message: ~p\n", [?MODULE, Msg]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
@@ -138,7 +148,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 start_and_register_server(Topic, Path) ->
     reregister_writer(Topic),
-    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path),
+    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path, ?WORKERTIMEOUT),
     register_server(Pid, Topic, Path),
     Pid.
 
@@ -162,26 +172,29 @@ reregister_server(Pid) ->
 % we have to update the current write server so it
 % can receive reads
 reregister_writer(Topic) ->
-    case server(Topic, timestamp()) of
+    case write_pid_internal(Topic) of
         Pid when is_pid(Pid) ->
             reregister_server(Pid);
         _ ->
             noop
     end.
 
-server(Topic, Timestamp) ->
+read_pid_internal(Topic, Timestamp) ->
     case ets:next(poe_server_dir, {Topic, Timestamp}) of
         Key = {Topic, _} ->
             [{_, Pid}] = ets:lookup(poe_server_dir, Key), 
             Pid;
         _ ->
-            case ets:prev(poe_server_dir, {Topic, <<>>}) of
-                Key = {Topic, _} ->
-                    [{_, Pid}] = ets:lookup(poe_server_dir, Key), 
-                    Pid;
-                _ ->
-                    not_found
-            end
+            write_pid_internal(Topic)
+    end.
+
+write_pid_internal(Topic) ->
+    case ets:prev(poe_server_dir, {Topic, <<>>}) of
+        Key = {Topic, _} ->
+            [{_, Pid}] = ets:lookup(poe_server_dir, Key), 
+            Pid;
+        _ ->
+            not_found
     end.
 
 %%%===================================================================
@@ -235,12 +248,6 @@ find_topics_and_paths(BaseDir) ->
 timestamp() ->
     {MegaSecs, Secs, MicroSecs} = now(),
     (MegaSecs * 1000000 + Secs) * 1000000 + MicroSecs.
-
-maybe_create_new_partition(Topic, Servers) ->
-    io:format("Servers:~p\n", [Servers]),
-    ServerData = [Data||{Data, Pid}<-Servers, Pid =:= write_pid(Topic)],
-    io:format("ServerData for ~p :~p\n", [Topic, ServerData]),
-    true.
 
 %% ===================================================================
 %% Profiling
