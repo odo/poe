@@ -7,8 +7,7 @@
 %% API
 -export([start_link/1, stop/1]).
 -export([
-    create_partition/1
-    , maybe_create_new_partitions/0
+    maybe_create_new_partitions/0
     , topics/0
     , write_pid/1
     , read_pid/2
@@ -30,10 +29,22 @@
     , fprofile_writer/2
     ]).
 
+-ifdef(TEST).
+-export([crash_appendix_server/1, create_partition/1]).
+-endif.
+
+
 -define(SERVER, ?MODULE).
--define(COUNTLIMIT, 1000000).
--define(SIZELIMIT, 64 * 1024 * 1024).
+-ifdef(TEST).
+-define(COUNTLIMIT, 2).
+-define(CHECKINTERVAL, 1 * 10).
+-else.
 -define(CHECKINTERVAL, 1 * 1000).
+-define(COUNTLIMIT, 1000000).
+-endif.
+
+-define(SIZELIMIT, 64 * 1024 * 1024).
+
 -define(WORKERTIMEOUT, 10 * 1000).
 -record(state, {base_dir, topics}).
 
@@ -43,9 +54,6 @@
 
 start_link(BaseDir) ->
     gen_server2:start_link({local, ?SERVER}, ?MODULE, [BaseDir], []).
-
-create_partition(Topic) ->
-    gen_server2:call(?SERVER, {create_partition, Topic}).
 
 topics() ->
     gen_server2:call(?SERVER, {topics}).
@@ -119,7 +127,15 @@ handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics
     {reply, PidsNew, State};
 
 handle_call({topics}, _From, State = #state{topics = Topics}) ->
-    {reply, Topics, State}.
+    {reply, Topics, State};
+
+handle_call({crash_appendix_server, Pid}, _From, State) ->
+    try
+        appendix_server:sync_and_crash(Pid)
+    catch
+        exit:_ -> noop
+    end,
+    {reply, ok, State}.
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -272,3 +288,17 @@ fprofile_writer(Topic, Calls) ->
     [poe:put(Topic, <<"this is some little bit of data...">>)||_<-Seq],
     fprof:profile({file, File}),
     fprof:analyse().
+
+%% ===================================================================
+%% Tests
+%% ===================================================================
+
+-ifdef(TEST).
+
+create_partition(Topic) ->
+    gen_server2:call(?SERVER, {create_partition, Topic}).
+
+crash_appendix_server(Pid) ->
+    gen_server2:call(?SERVER, {crash_appendix_server, Pid}).
+
+-endif.

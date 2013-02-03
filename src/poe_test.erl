@@ -95,12 +95,7 @@ test_crash() ->
 	?assertEqual({Pointer2, ?TESTDATA}, poe:next(?TESTTOPIC, Pointer)).
 
 crash(Pid) ->
-	try
-		appendix_server:sync_and_crash(Pid)
-	catch
-		exit:_ -> noop
-	end.
-
+	poe_server:crash_appendix_server(Pid).
 
 test_properties() ->
 	?assert(proper:quickcheck(proper_poe(), [{to_file, user}, {numtests, 250}])).
@@ -135,8 +130,7 @@ command(_S) ->
     	, {call, ?MODULE, proper_test_put_by_socket, [topic(), [binary()]]}
         , {call, ?MODULE, proper_test_get_all_by_next, [topic()]}
         , {call, ?MODULE, proper_test_get_all_by_socket, [topic(), limit()]}
-        , {call, ?MODULE, proper_test_create_partition, [topic()]}
-        % , {call, ?MODULE, proper_test_kill_server, [topic()]}
+        , {call, ?MODULE, proper_test_kill_server, [topic()]}
 	]).
 
 precondition(State, {call, ?MODULE, proper_test_get_all_by_next, [Topic]}) ->
@@ -193,9 +187,6 @@ postcondition(_, {call, _, proper_test_put, [_, _]}, Result) ->
 postcondition(_, {call, _, proper_test_put_by_socket, [_, _]}, Result) ->
     is_integer(Result);
 
-postcondition(_, {call, _, proper_test_create_partition, [_]}, Result) ->
-    Result =:= noop orelse is_pid(Result);
-
 postcondition(State, {call, _, proper_test_get_all_by_socket, [Topic, _]}, Result) ->
 	match_or_log(Result, proplists:get_value(Topic, State#proper_state.data, []), {proper_test_get_all_by_socket, Topic});
 
@@ -251,15 +242,6 @@ proper_test_get_all_by_socket(Topic, Limit, Pointer, Socket) ->
 			{PointerNew, _} = lists:last(Data),
 			error_logger:info_msg("Data in proper_test_get_all_by_socket: ~p\n", [Data]),
 			[[D||{_P, D} <-Data]|proper_test_get_all_by_socket(Topic, Limit, PointerNew, Socket)]
-	end.
-
-proper_test_create_partition(Topic) ->
-	% we are not creating a new partion when the latest one is empty
-	case proplists:get_value(count, appendix_server:info(poe_server:write_pid(Topic))) of
-		0 ->
-			noop;
-		_ ->
-			poe_server:create_partition(Topic)
 	end.
 
 proper_test_kill_server(Topic) ->
