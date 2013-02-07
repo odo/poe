@@ -26,7 +26,7 @@
 %% Profiling
 -export([
     eprofile_writer/1, eprofile_writer/2
-    , fprofile_writer/2
+    , fprofile_writer/2, fprofile_reader/2
     ]).
 
 -ifdef(TEST).
@@ -39,13 +39,14 @@
 -define(COUNTLIMIT, 2).
 -define(CHECKINTERVAL, 1 * 10).
 -else.
--define(CHECKINTERVAL, 1 * 1000).
--define(COUNTLIMIT, 1000000).
+-define(CHECKINTERVAL, 500).
+-define(COUNTLIMIT, 100000).
 -endif.
 
 -define(SIZELIMIT, 64 * 1024 * 1024).
-
--define(WORKERTIMEOUT, 10 * 1000).
+-define(BUFFERCOUNTMAX, 100).
+%-define(WORKERTIMEOUT, 10 * 1000).
+-define(WORKERTIMEOUT, 1000).
 -record(state, {base_dir, topics}).
 
 %%%===================================================================
@@ -164,7 +165,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 start_and_register_server(Topic, Path) ->
     reregister_writer(Topic),
-    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path, ?WORKERTIMEOUT),
+    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path, ?BUFFERCOUNTMAX, ?WORKERTIMEOUT),
     register_server(Pid, Topic, Path),
     Pid.
 
@@ -286,6 +287,16 @@ fprofile_writer(Topic, Calls) ->
     os:cmd("rm " ++ File),
     fprof:trace([start, {procs, [poe_server:write_pid(Topic)]},{file, File}]),
     [poe:put(Topic, <<"this is some little bit of data...">>)||_<-Seq],
+    fprof:profile({file, File}),
+    fprof:analyse().
+
+fprofile_reader(Topic, Calls) ->
+    Seq = lists:seq(1, Calls),
+    File = "/tmp/poe_server_profile",
+    os:cmd("rm " ++ File),
+    Server = poe_server:read_pid(Topic, 0),
+    fprof:trace([start, {procs, [Server]},{file, File}]),
+    [appendix_server:file_pointer_lax(Server, 0, 1000001)||_<-Seq],
     fprof:profile({file, File}),
     fprof:analyse().
 
