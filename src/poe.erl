@@ -7,7 +7,8 @@
 
 %% API
 -compile({no_auto_import,[put/2]}).
--export([topics/0, put/2, next/2]).
+-export([put/2, next/2]).
+-export([topics/0, status/0, print_status/0]).
 
 %% ===================================================================
 %% Application callbacks
@@ -78,3 +79,36 @@ next(Topic, Pointer) ->
 					next(Topic, Pointer)
 			end
 	end.
+
+print_status() ->
+    lists:map(
+        fun({T, Servers}) ->
+            io:format("~ts\t:", [T]),
+            [io:format("~p", [State])||{_Pid, State}<-Servers],
+            io:format("\n", [])
+        end,
+        status()
+        ).    
+
+status() ->
+    [{T, topic_status(T)}||T<-topics()].
+
+topic_status(Topic) ->
+    TopicTimestampPid = [{TS, Pid}||[{{T, TS}, Pid}]<-ets:match(poe_server_dir, '$1'), T =:= Topic],
+    WritePid = poe_server:write_pid(Topic),
+    lists:map(
+        fun({_TS, Pid}) ->
+            case Pid =:= WritePid of
+                true ->
+                    {Pid, w};
+                false ->
+                    case process_info(Pid, current_function) of
+                        {current_function, {erlang, hibernate, 3}} ->
+                            {Pid, h};
+                        _ ->
+                            {Pid, r}
+                    end
+            end
+        end
+        , lists:sort(TopicTimestampPid)
+    ).

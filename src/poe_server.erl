@@ -11,8 +11,6 @@
     , topics/0
     , write_pid/1
     , read_pid/2
-    , status/0
-    , print_status/0
     ]).
 
 %% gen_server2 callbacks
@@ -73,39 +71,6 @@ read_pid(Topic, Timestamp) ->
 write_pid(Topic) ->
     gen_server2:call(?SERVER, {write_pid, Topic}).
 
-print_status() ->
-    lists:map(
-        fun({T, Servers}) ->
-            io:format("~p\t:", [T]),
-            [io:format("~p", [State])||{_Pid, State}<-Servers],
-            io:format("\n", [])
-        end,
-        status()
-        ).    
-
-status() ->
-    [{T, topic_status(T)}||T<-topics()].
-
-topic_status(Topic) ->
-    TopicTimestampPid = [{TS, Pid}||[{{T, TS}, Pid}]<-ets:match(poe_server_dir, '$1'), T =:= Topic],
-    WritePid = poe_server:write_pid(Topic),
-    lists:map(
-        fun({_TS, Pid}) ->
-            case Pid =:= WritePid of
-                true ->
-                    {Pid, w};
-                false ->
-                    case process_info(Pid, current_function) of
-                        {current_function, {erlang, hibernate, 3}} ->
-                            {Pid, h};
-                        _ ->
-                            {Pid, r}
-                    end
-            end
-        end
-        , lists:sort(TopicTimestampPid)
-    ).
-
 %%%===================================================================
 %%% gen_server2 callbacks
 %%%===================================================================
@@ -163,7 +128,7 @@ handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics
     {reply, PidsNew, State};
 
 handle_call({topics}, _From, State = #state{topics = Topics}) ->
-    {reply, Topics, State};
+    {reply, lists:usort(Topics), State};
 
 handle_call({crash_appendix_server, Pid}, _From, State) ->
     try
