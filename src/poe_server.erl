@@ -11,6 +11,8 @@
     , topics/0
     , write_pid/1
     , read_pid/2
+    , status/0
+    , print_status/0
     ]).
 
 %% gen_server2 callbacks
@@ -71,6 +73,39 @@ read_pid(Topic, Timestamp) ->
 write_pid(Topic) ->
     gen_server2:call(?SERVER, {write_pid, Topic}).
 
+print_status() ->
+    lists:map(
+        fun({T, Servers}) ->
+            io:format("~p\t:", [T]),
+            [io:format("~p", [State])||{_Pid, State}<-Servers],
+            io:format("\n", [])
+        end,
+        status()
+        ).    
+
+status() ->
+    [{T, topic_status(T)}||T<-topics()].
+
+topic_status(Topic) ->
+    TopicTimestampPid = [{TS, Pid}||[{{T, TS}, Pid}]<-ets:match(poe_server_dir, '$1'), T =:= Topic],
+    WritePid = poe_server:write_pid(Topic),
+    lists:map(
+        fun({_TS, Pid}) ->
+            case Pid =:= WritePid of
+                true ->
+                    {Pid, w};
+                false ->
+                    case process_info(Pid, current_function) of
+                        {current_function, {erlang, hibernate, 3}} ->
+                            {Pid, h};
+                        _ ->
+                            {Pid, r}
+                    end
+            end
+        end
+        , lists:sort(TopicTimestampPid)
+    ).
+
 %%%===================================================================
 %%% gen_server2 callbacks
 %%%===================================================================
@@ -82,9 +117,9 @@ init([BaseDir]) ->
     ets:new(poe_server_dir, [ordered_set, named_table, protected]),
     mkdir(BaseDir),
     mkdir(topics_dir(BaseDir)),
-    start_from_dir(BaseDir),
+    Topics = lists:usort(start_from_dir(BaseDir)),
     timer:apply_interval(?CHECKINTERVAL, poe_server, maybe_create_new_partitions, []),
-    {ok, #state{base_dir = BaseDir, topics = []}}.
+    {ok, #state{base_dir = BaseDir, topics = Topics}}.
 
 prioritise_info({'EXIT', _Pid, _Reason}, _State) ->
     1;
@@ -243,7 +278,8 @@ start_from_dir(BaseDir) ->
         start_and_register_server(Topic, Path),
         Topic
     end,   
-    [Register(Topic, Path)||{Topic, Path}<-TopicsAndPaths].
+    [Register(Topic, Path)||{Topic, Path}<-TopicsAndPaths],
+    [Topic||{Topic, _Path}<-TopicsAndPaths].
 
 find_topics_and_paths(BaseDir) ->
     TopicsDir = topics_dir(BaseDir),
