@@ -36,19 +36,19 @@
 -endif.
 
 
--define(SERVER, ?MODULE).
--ifdef(TEST).
--define(COUNTLIMIT, 2).
--define(CHECKINTERVAL, 1 * 10).
--else.
+    -ifdef(TEST).
+    -define(COUNTLIMIT, 2).
+    -define(CHECKINTERVAL, 1 * 10).
+    -else.
 -define(CHECKINTERVAL, 500).
 -define(COUNTLIMIT, 100000).
--endif.
+    -endif.
 
 -define(SIZELIMIT, 64 * 1024 * 1024).
 -define(BUFFERCOUNTMAX, 100).
-%-define(WORKERTIMEOUT, 10 * 1000).
 -define(WORKERTIMEOUT, 1000).
+
+-define(SERVER, ?MODULE).
 -record(state, {base_dir, topics}).
 
 %%%===================================================================
@@ -150,7 +150,7 @@ handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics
         Info = appendix_server:info(WriterPid),
         case proplists:get_value(count, Info) >= ?COUNTLIMIT orelse proplists:get_value(size, Info) >= ?SIZELIMIT of
             true ->
-                error_logger:info_msg("starting new server because of:~p\n", [Info]),
+                error_logger:info_msg("starting new server for topic ~p\n", [Topic]),
                 WriterPidNew = create_partition_internal(Topic, BaseDir),
                 appendix_server:sync(WriterPid),
                 WriterPidNew;
@@ -177,7 +177,7 @@ handle_cast(_Msg, State) ->
     {noreply, State}.
 
 handle_info({'EXIT', Pid, _Reason}, State) ->
-    error_logger:info_msg("~p: ~p just died. Restarting...\n", [?MODULE, Pid]),
+    error_logger:info_msg("~p: appendix_server ~p just died. Restarting...\n", [?MODULE, Pid]),
     [{Pid, {Topic, Path, _}}] = ets:lookup(poe_server_tracker, Pid),
     unregister_server(Pid),
     appendix_server:repair(Path),
@@ -185,7 +185,7 @@ handle_info({'EXIT', Pid, _Reason}, State) ->
     {noreply, State};
 
 handle_info(Msg, State) ->
-    error_logger:info_msg("~p git message: ~p\n", [?MODULE, Msg]),
+    error_logger:info_msg("~p got message: ~p\n", [?MODULE, Msg]),
     {noreply, State}.
 
 terminate(_Reason, _State) ->
