@@ -33,21 +33,8 @@
 -export([crash_appendix_server/1, create_partition/1]).
 -endif.
 
-
-    -ifdef(TEST).
-    -define(COUNTLIMIT, 2).
-    -define(CHECKINTERVAL, 1 * 10).
-    -else.
--define(CHECKINTERVAL, 500).
--define(COUNTLIMIT, 100000).
-    -endif.
-
--define(SIZELIMIT, 64 * 1024 * 1024).
--define(BUFFERCOUNTMAX, 100).
--define(WORKERTIMEOUT, 1000).
-
 -define(SERVER, ?MODULE).
--record(state, {base_dir, topics}).
+-record(state, {base_dir, topics, options}).
 
 %%%===================================================================
 %%% API
@@ -82,9 +69,11 @@ init([BaseDir]) ->
     ets:new(poe_server_dir, [ordered_set, named_table, protected]),
     mkdir(BaseDir),
     mkdir(topics_dir(BaseDir)),
-    Topics = lists:usort(start_from_dir(BaseDir)),
-    timer:apply_interval(?CHECKINTERVAL, poe_server, maybe_create_new_partitions, []),
-    {ok, #state{base_dir = BaseDir, topics = Topics}}.
+    Options = options(),
+    Topics = lists:usort(start_from_dir(BaseDir, Options)),
+    timer:apply_interval(option(check_interval, Options), poe_server, maybe_create_new_partitions, []),
+    error_logger:info_msg("~p starting with options: ~p", [?MODULE, Options]),
+    {ok, #state{base_dir = BaseDir, topics = Topics, options = Options}}.
 
 prioritise_info({'EXIT', _Pid, _Reason}, _State) ->
     1;
@@ -95,28 +84,28 @@ prioritise_info(_Msg, _State) ->
 handle_call({read_pid, Topic, Timestamp}, _From, State) ->
     {reply, read_pid_internal(Topic, Timestamp), State};
 
-handle_call({write_pid, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
+handle_call({write_pid, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir, options = Options}) ->
     {Pid, TopicsNew} =
     case write_pid_internal(Topic) of
         not_found ->
-            {create_partition_internal(Topic, BaseDir), lists:usort([Topic|Topics])};
+            {create_partition_internal(Topic, BaseDir, Options), lists:usort([Topic|Topics])};
         P ->
             {P, Topics}
     end,
     {reply, Pid, State#state{topics = TopicsNew}};
 
-handle_call({create_partition, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
-    Pid = create_partition_internal(Topic, BaseDir),
+handle_call({create_partition, Topic}, _From, State = #state{topics = Topics, base_dir = BaseDir, options = Options}) ->
+    Pid = create_partition_internal(Topic, BaseDir, Options),
     {reply, Pid, State#state{topics = lists:usort([Topic|Topics])}};
  
-handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics, base_dir = BaseDir}) ->
+handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics, base_dir = BaseDir, options = Options}) ->
     WritePidsAndTopics = [{write_pid_internal(T), T}||T<-Topics],
     MaybeCreteNewPartition = fun(WriterPid, Topic) ->
         Info = appendix_server:info(WriterPid),
-        case proplists:get_value(count, Info) >= ?COUNTLIMIT orelse proplists:get_value(size, Info) >= ?SIZELIMIT of
+        case proplists:get_value(count, Info) >= option(count_limit, Options) orelse proplists:get_value(size, Info) >= option(size_limit, Options) of
             true ->
                 error_logger:info_msg("starting new server for topic ~p\n", [Topic]),
-                WriterPidNew = create_partition_internal(Topic, BaseDir),
+                WriterPidNew = create_partition_internal(Topic, BaseDir, Options),
                 appendix_server:sync(WriterPid),
                 WriterPidNew;
             false ->
@@ -141,12 +130,12 @@ handle_call({crash_appendix_server, Pid}, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({'EXIT', Pid, _Reason}, State) ->
+handle_info({'EXIT', Pid, _Reason}, State = #state{options = Options}) ->
     error_logger:info_msg("~p: appendix_server ~p just died. Restarting...\n", [?MODULE, Pid]),
     [{Pid, {Topic, Path, _}}] = ets:lookup(poe_server_tracker, Pid),
     unregister_server(Pid),
     appendix_server:repair(Path),
-    _PidNew = start_and_register_server(Topic, Path),
+    _PidNew = start_and_register_server(Topic, Path, Options),
     {noreply, State};
 
 handle_info(Msg, State) ->
@@ -163,9 +152,9 @@ code_change(_OldVsn, State, _Extra) ->
 %%% server registration and lookup
 %%%===================================================================
 
-start_and_register_server(Topic, Path) ->
+start_and_register_server(Topic, Path, Options) ->
     reregister_writer(Topic),
-    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path, ?BUFFERCOUNTMAX, ?WORKERTIMEOUT),
+    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path, option(buffer_count_max, Options), option(worker_timeout, Options)),
     register_server(Pid, Topic, Path),
     Pid.
 
@@ -218,13 +207,22 @@ write_pid_internal(Topic) ->
 %%% utilities
 %%%===================================================================
 
-create_partition_internal(Topic, BaseDir) ->
+
+options() ->
+    Keys = [port, check_interval, count_limit, size_limit, buffer_count_max, worker_timeout],
+    Env = application:get_all_env(poe),
+    [{K, proplists:get_value(K, Env)}||K<-Keys].
+
+option(Key, Options) ->
+    proplists:get_value(Key, Options).
+
+create_partition_internal(Topic, BaseDir, Options) ->
     mkdir(BaseDir),
     mkdir(topics_dir(BaseDir)),
     TopicDir = topics_dir(BaseDir) ++ binary_to_list(Topic),
     mkdir(TopicDir),
     FileName = TopicDir ++ "/" ++ integer_to_list(timestamp()),
-    start_and_register_server(Topic, FileName).
+    start_and_register_server(Topic, FileName, Options).
 
 mkdir(Dir) ->
     case file:make_dir(Dir) of
@@ -237,10 +235,10 @@ mkdir(Dir) ->
 topics_dir(BaseDir) ->
     BaseDir ++ "/" ++ "topics/".
 
-start_from_dir(BaseDir) ->
+start_from_dir(BaseDir, Options) ->
     TopicsAndPaths = find_topics_and_paths(BaseDir),
     Register = fun(Topic, Path) ->
-        start_and_register_server(Topic, Path),
+        start_and_register_server(Topic, Path, Options),
         Topic
     end,   
     [Register(Topic, Path)||{Topic, Path}<-TopicsAndPaths],

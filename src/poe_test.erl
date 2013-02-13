@@ -11,10 +11,9 @@
 -define(TESTDATA2, <<"test_data2">>).
 
 test_setup() ->
-	% application:start(sasl),
+	application:start(sasl),
 	os:cmd("rm -r " ++ ?TESTDIR),
-	application:set_env(poe, dir, ?TESTDIR),
-    application:start(poe).
+    poe:start([{dir, ?TESTDIR}, {count_limit, 2}, {count_interval, 10}]).
 
 test_teardown(_) ->
     application:stop(poe).

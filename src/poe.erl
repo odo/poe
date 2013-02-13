@@ -3,22 +3,38 @@
 -behaviour(application).
 
 %% Application callbacks
--export([start/0, start/2, stop/1]).
+-export([start/0, start/1, start/2, stop/1]).
 
 %% API
 -compile({no_auto_import,[put/2]}).
 -export([put/2, next/2]).
 -export([topics/0, status/0, print_status/0]).
 
+-define(DEFAULTS, 
+	[
+		{dir, undefined}
+		, {check_interval, 500}
+		, {count_limit, 100000}
+		, {size_limit, 64 * 1024 * 1024}
+		, {buffer_count_max, 100}
+		, {worker_timeout, 1000}
+		, {port, 5555}
+	]
+).
+
 %% ===================================================================
 %% Application callbacks
 %% ===================================================================
 
 start() ->
+	start([]).
+
+start(Options) ->
+	configure(),
+	[read_from_options(Key, Default, Options)||{Key, Default}<-?DEFAULTS],
 	application:start(poe).
 
 start(_StartType, _StartArgs) ->
-	configure(),
 	Dir = env_or_throw(dir),
 	poe_sup:start_link(Dir).
 
@@ -34,6 +50,14 @@ configure() ->
 			error_logger:info_msg("Loading configuration from ~p.\n", [FileName]),
 			{ok, [Config]} = file:consult(FileName),
 			[set_app_env(C) || C <- Config]
+	end.
+
+read_from_options(Key, Default, Options) ->
+	case proplists:get_value(Key, Options, Default) of
+		undefined ->
+			noop;
+		Value ->
+			application:set_env(poe, Key, Value)
 	end.
 
 set_app_env({App, Vars}) ->
