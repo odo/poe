@@ -8,6 +8,7 @@
 -export([start_link/1, stop/1]).
 -export([
     maybe_create_new_partitions/0
+    , maybe_destroy_partitions/0
     , topics/0
     , write_pid/1
     , read_pid/2
@@ -49,6 +50,9 @@ topics() ->
 maybe_create_new_partitions() ->
     gen_server2:call(?SERVER, {maybe_create_new_partitions}).
 
+maybe_destroy_partitions() ->
+    gen_server2:call(?SERVER, {maybe_destroy_partitions}).
+
 stop(Pid) ->
     gen_server2:call(Pid, stop).
 
@@ -70,9 +74,15 @@ init([BaseDir]) ->
     mkdir(BaseDir),
     mkdir(topics_dir(BaseDir)),
     Options = options(),
+    error_logger:info_msg("starting with options: ~p\n", [Options]),
     Topics = lists:usort(start_from_dir(BaseDir, Options)),
-    timer:apply_interval(option(check_interval, Options), poe_server, maybe_create_new_partitions, []),
-    error_logger:info_msg("~p starting with options: ~p", [?MODULE, Options]),
+    timer:apply_interval(round(option(check_interval, Options) * 1000), poe_server, maybe_create_new_partitions, []),
+    case option(max_age, Options) of
+        infinity ->
+            noop;
+        MaxAge ->
+            timer:apply_interval(round(min(MaxAge / 10.0, 600) * 1000), poe_server, maybe_destroy_partitions, [])
+    end,
     {ok, #state{base_dir = BaseDir, topics = Topics, options = Options}}.
 
 prioritise_info({'EXIT', _Pid, _Reason}, _State) ->
@@ -116,6 +126,18 @@ handle_call({maybe_create_new_partitions}, _From, State = #state{topics = Topics
     PidsNew = [PNAN||PNAN<-PidsNewAndNoop, is_pid(PNAN)],
     {reply, PidsNew, State};
 
+handle_call({maybe_destroy_partitions}, _From, State = #state{topics = Topics, options = Options}) ->
+    MaxAge = option(max_age, Options),
+    lists:map(
+        fun(Topic) ->
+            WritePid = write_pid_internal(Topic),        
+            ReadPids = [Pid||[{{T, _TS}, Pid}]<-ets:match(poe_server_dir, '$1'), T =:= Topic, Pid =/= WritePid],
+            [maybe_destroy_partition(Pid, MaxAge)||Pid<-ReadPids]
+        end,
+        Topics
+    ),
+    {reply, ok, State};
+
 handle_call({topics}, _From, State = #state{topics = Topics}) ->
     {reply, lists:usort(Topics), State};
 
@@ -130,8 +152,8 @@ handle_call({crash_appendix_server, Pid}, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
-handle_info({'EXIT', Pid, _Reason}, State = #state{options = Options}) ->
-    error_logger:info_msg("~p: appendix_server ~p just died. Restarting...\n", [?MODULE, Pid]),
+handle_info({'EXIT', Pid, Reason}, State = #state{options = Options}) when Reason =/= normal ->
+    error_logger:info_msg("~p: appendix_server ~p just died with reason ~p. Restarting...\n", [?MODULE, Pid, Reason]),
     [{Pid, {Topic, Path, _}}] = ets:lookup(poe_server_tracker, Pid),
     unregister_server(Pid),
     appendix_server:repair(Path),
@@ -203,13 +225,24 @@ write_pid_internal(Topic) ->
             not_found
     end.
 
+maybe_destroy_partition(Pid, MaxAge) ->
+    {MegaSecs,Secs,MicroSecs} = now(),
+    Now = (MegaSecs*1000000 + Secs)*1000000 + MicroSecs,
+    case proplists:get_value(pointer_high, appendix_server:info(Pid)) of
+        P when P < Now - (MaxAge * 1000000)  ->
+            unregister_server(Pid),
+            appendix_server:destroy(Pid);
+        _ ->
+            noop
+    end.
+
 %%%===================================================================
 %%% utilities
 %%%===================================================================
 
 
 options() ->
-    Keys = [port, check_interval, count_limit, size_limit, buffer_count_max, worker_timeout],
+    Keys = [port, check_interval, count_limit, size_limit, buffer_count_max, worker_timeout, max_age],
     Env = application:get_all_env(poe),
     [{K, proplists:get_value(K, Env)}||K<-Keys].
 

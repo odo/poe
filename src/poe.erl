@@ -13,12 +13,13 @@
 -define(DEFAULTS, 
 	[
 		{dir, undefined}
-		, {check_interval, 500}
+		, {check_interval, 0.5}
 		, {count_limit, 100000}
 		, {size_limit, 64 * 1024 * 1024}
 		, {buffer_count_max, 100}
 		, {worker_timeout, 1000}
 		, {port, 5555}
+		, {max_age, infinity}
 	]
 ).
 
