@@ -2,6 +2,7 @@
 %% and dispatching read and write requests.
 
 -module(poe_server).
+-author('Florian Odronitz <odo@mac.com>').
 -behaviour(gen_server2).
 
 %% API

@@ -1,4 +1,5 @@
 -module(poe).
+-author('Florian Odronitz <odo@mac.com>').
 
 -behaviour(application).
 

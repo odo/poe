@@ -1,4 +1,6 @@
 -module(poe_listener).
+-author('Florian Odronitz <odo@mac.com>').
+
 -export([start_link/4, init/4]).
 
 start_link(ListenerPid, Socket, Transport, Opts) ->
