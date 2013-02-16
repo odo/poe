@@ -1,3 +1,2 @@
-basho_bench headers
-stop listener
 specs
+dialyzer

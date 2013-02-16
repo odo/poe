@@ -45,21 +45,26 @@
 start_link(BaseDir) ->
     gen_server2:start_link({local, ?SERVER}, ?MODULE, [BaseDir], []).
 
-topics() ->
-    gen_server2:call(?SERVER, {topics}).
-
-maybe_create_new_partitions() ->
-    gen_server2:call(?SERVER, {maybe_create_new_partitions}).
-
-maybe_destroy_partitions() ->
-    gen_server2:call(?SERVER, {maybe_destroy_partitions}).
-
 stop(Pid) ->
     gen_server2:call(Pid, stop).
 
+-spec topics() -> [poe:topic()].
+topics() ->
+    gen_server2:call(?SERVER, {topics}).
+
+-spec maybe_create_new_partitions() -> [pid()].
+maybe_create_new_partitions() ->
+    gen_server2:call(?SERVER, {maybe_create_new_partitions}).
+
+-spec maybe_destroy_partitions() -> ok.
+maybe_destroy_partitions() ->
+    gen_server2:call(?SERVER, {maybe_destroy_partitions}).
+
+-spec read_pid(poe:topic(), poe:pointer()) -> pid() | not_found.
 read_pid(Topic, Timestamp) ->
     gen_server2:call(?SERVER, {read_pid, Topic, Timestamp}).
 
+-spec write_pid(poe:topic()) -> pid().
 write_pid(Topic) ->
     gen_server2:call(?SERVER, {write_pid, Topic}).
 

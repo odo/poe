@@ -15,6 +15,7 @@ It has the following characteristics:
 * very high read rates
 * producers push messages onto the queue
 * consumers pull messages from the queue
+* uses file:sendfile/5
 * two interfaces: Erlang & socket
 
 ## Installation
@@ -204,7 +205,12 @@ The tests where performed on two different types of hardware:
 
 ## Tests:
 
+eunit and proper:
 ```
 make test
+```
+dialyzer:
+```
+make check
 ```
 

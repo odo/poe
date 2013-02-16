@@ -21,5 +21,5 @@ start:
 xref: compile
 	rebar xref skip_deps=true
 
-analyze: compile
-	dialyzer ebin/*.beam deps/*/ebin/*.beam
+check: compile
+	dialyzer -Wno_undefined_callbacks ebin/*.beam deps/*/ebin/*.beam

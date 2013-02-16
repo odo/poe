@@ -24,50 +24,57 @@
 	]
 ).
 
+-type topic() :: binary().
+-type pointer() :: non_neg_integer().
+-type message() :: binary().
+-type server_type() :: w|w|h.
+
+-export_type([topic/0, pointer/0, message/0]).
+
 %% ===================================================================
 %% Application callbacks
 %% ===================================================================
 
+-spec start() -> ok | {error, term()}.
 start() ->
 	start([]).
 
+-spec start(list()) -> ok | {error, term()}.
 start(Options) ->
 	[read_from_options(Key, Default, Options)||{Key, Default}<-?DEFAULTS],
 	application:start(poe).
 
+-spec start(term(), term()) -> {ok, pid()}.
 start(_StartType, _StartArgs) ->
 	start_listener(env_or_throw(port)),
 	case poe_sup:start_link(env_or_throw(dir)) of
-		P when is_pid(P) ->
-			P;
-		{error, {already_started, P}} ->
-			P;
+		{ok, Pid} ->
+			{ok, Pid};
+		{error, {already_started, Pid}} ->
+			{ok, Pid};
 		Error ->
 			throw(Error)
 	end.
 
+-spec stop(term()) -> ok.
 stop(_State) ->
 	% we are only stopping the listener here
 	% since other applications might depend on ranch
 	ranch:stop_listener(poe_tcp_listener),
     ok.
 
+-spec start_listener(non_neg_integer()) -> pid().
 start_listener(Port)->
 	case application:start(ranch) of
 		ok ->
 			ok;
 		{error, {already_started, ranch}} ->
 			ok;
-		Error ->
-			throw(Error)
+		E ->
+			throw(E)
 	end,
-	case ranch:start_listener(poe_tcp_listener, 10, ranch_tcp, [{port, Port}], poe_listener, []) of
-		{ok, Pid} ->
-			Pid;
-		{error, {already_started, Pid}} ->
-			Pid
-	end.
-
+	{ok, Pid} = ranch:start_listener(poe_tcp_listener, 10, ranch_tcp, [{port, Port}], poe_listener, []),
+	Pid.
 
 read_from_options(Key, Default, Options) ->
 	case proplists:get_value(Key, Options, Default) of
@@ -89,9 +96,11 @@ env_or_throw(Key) ->
 %% API
 %% ===================================================================
 
+-spec topics() -> [topic()].
 topics() ->
 	poe_server:topics().
 
+-spec put(topic(), message()) -> pointer().
 put(Topic, Data) when byte_size(Topic) > 0 andalso byte_size(Data) > 0 ->
 	Server = poe_server:write_pid(Topic),
 	try
@@ -103,6 +112,7 @@ put(Topic, Data) when byte_size(Topic) > 0 andalso byte_size(Data) > 0 ->
 			put(Topic, Data)
 	end.
 
+-spec next(topic(), pointer()) -> {pointer(), message()} | not_found.
 next(Topic, Pointer) ->
 	case poe_server:read_pid(Topic, Pointer) of
 		not_found ->
@@ -118,6 +128,7 @@ next(Topic, Pointer) ->
 			end
 	end.
 
+-spec print_status() -> ok.
 print_status() ->
     lists:map(
         fun({T, Servers}) ->
@@ -126,11 +137,14 @@ print_status() ->
             io:format("\n", [])
         end,
         status()
-        ).    
+        ),
+  	ok.
 
+-spec status() -> [{topic(), [{pid(), server_type()}]}].
 status() ->
     [{T, topic_status(T)}||T<-topics()].
 
+-spec topic_status(topic()) -> [{pid(), server_type()}].
 topic_status(Topic) ->
     TopicTimestampPid = [{TS, Pid}||[{{T, TS}, Pid}]<-ets:match(poe_server_dir, '$1'), T =:= Topic],
     WritePid = poe_server:write_pid(Topic),

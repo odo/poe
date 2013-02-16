@@ -6,6 +6,7 @@
 
 -export([start_link/1, init/1]).
 
+-spec start_link(list()) -> {ok, pid()} | ignore | {error, {already_started, pid()} | {shutdown, term()} | term()}.
 start_link(BaseDir) ->
 	supervisor:start_link({local, ?SERVER}, ?MODULE, [BaseDir]).
 
