@@ -18,7 +18,7 @@
 		, {count_limit, 100000}
 		, {size_limit, 64 * 1024 * 1024}
 		, {buffer_count_max, 100}
-		, {worker_timeout, 1000}
+		, {worker_timeout, 1}
 		, {port, 5555}
 		, {max_age, infinity}
 	]
@@ -32,7 +32,6 @@ start() ->
 	start([]).
 
 start(Options) ->
-	configure(),
 	[read_from_options(Key, Default, Options)||{Key, Default}<-?DEFAULTS],
 	application:start(poe).
 
@@ -48,6 +47,9 @@ start(_StartType, _StartArgs) ->
 	end.
 
 stop(_State) ->
+	% we are only stopping the listener here
+	% since other applications might depend on ranch
+	ranch:stop_listener(poe_tcp_listener),
     ok.
 
 start_listener(Port)->
@@ -67,17 +69,6 @@ start_listener(Port)->
 	end.
 
 
-% when CONFIG is specified, we are loading the config file manually
-configure() ->
-	case os:getenv("CONFIG") of
-		false ->
-			noop;
-		FileName ->
-			error_logger:info_msg("Loading configuration from ~p.\n", [FileName]),
-			{ok, [Config]} = file:consult(FileName),
-			[set_app_env(C) || C <- Config]
-	end.
-
 read_from_options(Key, Default, Options) ->
 	case proplists:get_value(Key, Options, Default) of
 		undefined ->
@@ -85,9 +76,6 @@ read_from_options(Key, Default, Options) ->
 		Value ->
 			application:set_env(poe, Key, Value)
 	end.
-
-set_app_env({App, Vars}) ->
-	[application:set_env(App, K, V) || {K, V} <- Vars].
 
 env_or_throw(Key) ->
 	case proplists:get_value(Key, application:get_all_env(poe)) of

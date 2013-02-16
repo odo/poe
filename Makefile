@@ -13,10 +13,10 @@ test:
 	rebar skip_deps=true eunit
 
 console:
-	CONFIG=private/app.config erl -pz ebin deps/*/ebin
+	erl -config private/app -pz ebin deps/*/ebin
 
 start:
-	CONFIG=private/app.config erl -pz ebin deps/*/ebin -s poe
+	erl -config private/app -pz ebin deps/*/ebin -s poe
 
 xref: compile
 	rebar xref skip_deps=true

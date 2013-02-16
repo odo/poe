@@ -177,7 +177,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 start_and_register_server(Topic, Path, Options) ->
     reregister_writer(Topic),
-    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path, option(buffer_count_max, Options), option(worker_timeout, Options)),
+    {ok, Pid} = poe_appendix_sup:start_child(Topic, Path, option(buffer_count_max, Options), round(option(worker_timeout, Options) * 1000)),
     register_server(Pid, Topic, Path),
     Pid.
 
