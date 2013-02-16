@@ -37,11 +37,35 @@ start(Options) ->
 	application:start(poe).
 
 start(_StartType, _StartArgs) ->
-	Dir = env_or_throw(dir),
-	poe_sup:start_link(Dir).
+	start_listener(env_or_throw(port)),
+	case poe_sup:start_link(env_or_throw(dir)) of
+		P when is_pid(P) ->
+			P;
+		{error, {already_started, P}} ->
+			P;
+		Error ->
+			throw(Error)
+	end.
 
 stop(_State) ->
     ok.
+
+start_listener(Port)->
+	case application:start(ranch) of
+		ok ->
+			ok;
+		{error, {already_started, ranch}} ->
+			ok;
+		Error ->
+			throw(Error)
+	end,
+	case ranch:start_listener(poe_tcp_listener, 10, ranch_tcp, [{port, Port}], poe_listener, []) of
+		{ok, Pid} ->
+			Pid;
+		{error, {already_started, Pid}} ->
+			Pid
+	end.
+
 
 % when CONFIG is specified, we are loading the config file manually
 configure() ->
