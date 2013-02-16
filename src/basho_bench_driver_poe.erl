@@ -7,7 +7,7 @@
 
 -record(state, {read_pointers, read_socket, write_socket, server}).
 
--define(NOTOPICS, 1).
+-define(NOTOPICS, 3).
 
 %% ====================================================================
 %% API
