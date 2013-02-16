@@ -170,7 +170,7 @@ encode_pointer_request(Topic, Pointer, Limit) when is_binary(Topic) andalso is_i
 
 encode_put_request(Topic, Messages) when is_list(Messages) ->
 	TopicAndLength = add_length(byte_size(Topic), Topic),
-	MessageBin = lists:foldl(fun(M, B) -> add_client_message(M, B) end, <<>>, Messages),
+	MessageBin = lists:foldl(fun(M, B) -> add_client_message(M, B) end, <<>>, lists:reverse(Messages)),
 	TopicAndMessages = add_bin(TopicAndLength, MessageBin),
 	Body = add_message_type(?PUTREQUEST, TopicAndMessages),
 	add_length(byte_size(Body), Body).
@@ -269,7 +269,7 @@ test_pointer_request() ->
 test_put_request() ->
 	Request = encode_put_request(<<"topic">>, [<<"1">>, <<"2">>, <<"3">>]),
 	set_socket(Request),
-	?assertEqual({put_request, <<"topic">>, [<<"3">>, <<"2">>, <<"1">>]}, read_command('_')).
+	?assertEqual({put_request, <<"topic">>, [<<"1">>, <<"2">>, <<"3">>]}, read_command('_')).
 
 test_put_reply() ->
 	Request = encode_put_reply(1234567),
