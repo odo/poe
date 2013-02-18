@@ -1,26 +1,26 @@
 # Poe, a kafkaesque server written in Erlang
 
-The state of this library is experimental.
-
 Poe is a queuing server inspired by Kafka (http://kafka.apache.org/).
 Poe is based on appendix (https://github.com/odo/appendix).
 Poe manages sets of appendix servers and provides a socket interface.
+
+The state of this software is experimental.
 
 It has the following characteristics:
 
 * messages are binaries
 * messages are identified by 56 bit integers ("pointers")
 * messages are grouped by topics
-* pretty high write rates
-* very high read rates
 * producers push messages onto the queue
 * consumers pull messages from the queue
+* pretty high write rates
+* very high read rates
 * uses file:sendfile/5
 * two interfaces: Erlang & socket
 
 ## Installation
 
-appendix requires rebar: https://github.com/basho/rebar
+poe requires rebar: https://github.com/basho/rebar
 
 Building:
 ```
@@ -31,20 +31,17 @@ make
 ```
 
 ## Usage
-### Erlang
+### Erlang interface
 
 ```erlang
-plattfisch:poe odo$ rm -r /tmp/poe; make console
-CONFIG=private/app.config erl -pz ebin deps/*/ebin
+plattfisch:poe odo$ make console
+erl -config private/app -pz ebin deps/*/ebin
 Erlang R16A (erts-5.10) [source] [smp:4:4] [async-threads:10] [hipe] [kernel-poll:false]
 
 Eshell V5.10  (abort with ^G)
 1> poe:start().
 
-=INFO REPORT==== 15-Feb-2013::23:37:10 ===
-Loading configuration from "private/app.config".
-
-=INFO REPORT==== 15-Feb-2013::23:37:10 ===
+=INFO REPORT==== 16-Feb-2013::20:38:21 ===
 starting with options: [{port,5555},
                         {check_interval,0.5},
                         {count_limit,100000},
@@ -55,11 +52,11 @@ starting with options: [{port,5555},
 ok
 2> P1 = poe:put(<<"the_topic">>, <<"hello">>).
 
-=INFO REPORT==== 15-Feb-2013::23:37:10 ===
-starting empty appendix server writing to "/tmp/poe/topics/the_topic/1360967830251960".
-1360967830264661
+=INFO REPORT==== 16-Feb-2013::20:38:24 ===
+starting empty appendix server writing to "/tmp/poe/topics/the_topic/1361043504873813".
+1361043504888939
 3> P2 = poe:put(<<"the_topic">>, <<"world!">>).
-1360967830265279
+1361043508064575
 ```
 
 So when writing the first message to a topic, poe starts a new server to manage that topic.
@@ -69,13 +66,13 @@ Messages are retrieved by iteration via next/2, starting with pointer 0:
 
 ```erlang
 4> {P1, <<"hello">>} = poe:next(<<"the_topic">>, 0).
-{1360967830264661,<<"hello">>}
+{1361043504888939,<<"hello">>}
 5> {P2, <<"world!">>} = poe:next(<<"the_topic">>, P1).
-{1360967830265279,<<"world!">>}
+{1361043508064575,<<"world!">>}
 6> poe:next(<<"the_topic">>, P2).
 not_found
 7> poe:status().
-[{<<"the_topic">>,[{<0.52.0>,w}]}]
+[{<<"the_topic">>,[{<0.79.0>,w}]}]
 ```
 
 poe:info/0 provides information about the appendix_server managed by poe.
@@ -84,60 +81,106 @@ Types are:
 
 |symbol|type|meaning|
 |---|---|---|
-|w|writer|Active server with the most recent data. Writes to this topic are dispatched to this server.| 
+|w|writer|Active server with the most recent data. Writes to the topic are dispatched to this server.| 
 |r|reader|Active server with older data accepting reads.|
-|h|hybernating reader|A reader in an inactive state which needs to wake up before accepting reads.|
+|h|hibernating reader|A reader in an inactive state which needs to wake up before accepting reads.|
 
 We can make poe start an additional server by exceeding count_limit (currently 100 000):
 
 ```erlang
 8> [poe:put(<<"another_topic">>, <<"test">>)||N<-lists:seq(1, 100001)].
 
-=INFO REPORT==== 15-Feb-2013::23:37:10 ===
-starting empty appendix server writing to "/tmp/poe/topics/another_topic/1360967830273290".
-[1360967830274163,1360967830274202,1360967830274232,
- 1360967830274269,1360967830274301,1360967830274333,
- 1360967830274361,1360967830274393,1360967830274424,
- 1360967830274452,1360967830274484,1360967830274514,
- 1360967830274550,1360967830274625,1360967830274692,
- 1360967830274747,1360967830274800,1360967830274865,
- 1360967830274914,1360967830274963,1360967830275014,
- 1360967830275067,1360967830275118,1360967830275168,
- 1360967830275219,1360967830275267,1360967830275330,
- 1360967830275379,1360967830275429|...]
+=INFO REPORT==== 16-Feb-2013::20:40:54 ===
+starting empty appendix server writing to "/tmp/poe/topics/another_topic/1361043654923317".
+[1361043654924292,1361043654924338,1361043654924372,
+ 1361043654924419,1361043654924458,1361043654924492,
+ 1361043654924529,1361043654924566,1361043654924599,
+ 1361043654924629,1361043654924667,1361043654924703,
+ 1361043654924737,1361043654924775,1361043654924819,
+ 1361043654924852,1361043654924883,1361043654924931,
+ 1361043654924963,1361043654924993,1361043654925035,
+ 1361043654925068,1361043654925099,1361043654925131,
+ 1361043654925175,1361043654925205,1361043654925237,
+ 1361043654925275,1361043654925308|...]
 9> 
-=INFO REPORT==== 15-Feb-2013::23:37:13 ===
+=INFO REPORT==== 16-Feb-2013::20:40:58 ===
 starting new server for topic <<"another_topic">>
 
-=INFO REPORT==== 15-Feb-2013::23:37:13 ===
-starting empty appendix server writing to "/tmp/poe/topics/another_topic/1360967833719403".
+=INFO REPORT==== 16-Feb-2013::20:40:58 ===
+starting empty appendix server writing to "/tmp/poe/topics/another_topic/1361043658314914".
 ```
 
 So a second server has been startet for the topic <<"another_topic">> and after a few moments, the first one enters hibernation.
 
 ```erlang
-=ERROR REPORT==== 15-Feb-2013::23:37:14 ===
+=ERROR REPORT==== 16-Feb-2013::20:40:59 ===
 syncing and sleeping.
 
-=ERROR REPORT==== 15-Feb-2013::23:37:14 ===
-appendix server <0.61.0> goes into hibernation ...
+=ERROR REPORT==== 16-Feb-2013::20:40:59 ===
+appendix server <0.388.0> goes into hibernation ...
 poe:status().
-[{<<"another_topic">>,[{<0.61.0>,h},{<0.72.0>,w}]},
- {<<"the_topic">>,[{<0.52.0>,w}]}]
+[{<<"another_topic">>,[{<0.388.0>,h},{<0.399.0>,w}]},
+ {<<"the_topic">>,[{<0.79.0>,w}]}]
 10> poe:print_status().
 another_topic   :hw
 the_topic       :w
-[ok,ok]
-11> 
+ok
+```
+
+We need to quit the shell (in contrast to killing it with ctrl-c) so Poe can write data to disk and remove locks.
+
+```erlang
+11> q().
+ok
+12> 
+=ERROR REPORT==== 16-Feb-2013::20:41:07 ===
+received: {'EXIT',<0.68.0>,shutdown}
+
+=ERROR REPORT==== 16-Feb-2013::20:41:07 ===
+received: {'EXIT',<0.68.0>,shutdown}
+
+=INFO REPORT==== 16-Feb-2013::20:41:07 ===
+unlocking "/tmp/poe/topics/the_topic/1361043504873813"
+
+=INFO REPORT==== 16-Feb-2013::20:41:07 ===
+unlocking "/tmp/poe/topics/another_topic/1361043658314914"
+
+=ERROR REPORT==== 16-Feb-2013::20:41:07 ===
+received: {'EXIT',<0.68.0>,shutdown}
+
+=INFO REPORT==== 16-Feb-2013::20:41:07 ===
+unlocking "/tmp/poe/topics/another_topic/1361043654923317"
+```
+
+### Socket interface
+
+Given Poe is running on port 5555:
+
+```erlang
+1> Socket = poe_protocol:socket("127.0.0.1", 5555).
+#Port<0.828>
+2> poe_protocol:write(<<"my_shiny_topic">>, [<<"msg1">>, <<"msg2">>, <<"msg3">>], Socket).
+1361045443917303
+3> poe_protocol:write(<<"my_shiny_topic">>, [<<"msg4">>, <<"msg5">>], Socket).
+1361045443918321
+4> poe_protocol:read(<<"my_shiny_topic">>, 0, 2, Socket).
+[{1361045443917231,<<"msg1">>},
+ {1361045443917270,<<"msg2">>}]
+5> poe_protocol:read(<<"my_shiny_topic">>, 1361045443917270, 10, Socket).
+[{1361045443917303,<<"msg3">>},
+ {1361045443918295,<<"msg4">>},
+ {1361045443918321,<<"msg5">>}]
+6> poe_protocol:read(<<"my_shiny_topic">>, 1361045443918321, 10, Socket).
+[]
 ```
 
 # Configuration
 
 Poe expects a few configuration parameters to be set.
-There are three ways for the to be determined, ordered by descending priority:
+There are three ways for them to be determined, ordered by descending priority:
 
 * in the Options-argument of poe:start/1
-* via a environment config file ("erl -config ...")
+* via poes application environment (e.g. "erl -config ...")
 * as a hard coded default
 
 ## Parameters
@@ -145,22 +188,22 @@ There are three ways for the to be determined, ordered by descending priority:
 |name|type|unit|default|meaning|
 |---|---|---|---|---|
 |dir|list or 'undefined'||undefined|the base directory where poe keeps its data|
-|check_interval|number|seconds|0.5|The interval at which checks if the appendix_servers are "full"|
+|check_interval|number|seconds|0.5|the interval at which checks are done whether the appendix_servers have reached their capacity|
 |count_limit|integer|number of messages|100000|the capacity of a single appendix_server before a new one is started. The actual number might be a littel higher, depending on check_interval|
 |size_limit|integer|bytes|67108864 (64 MB)|the capacity of a single appendix_server before a new one is started. The actual number might be a littel higher, depending on check_interval|
 |buffer_count_max|integer|number of messages|100|number of messages before the data is written to disk|
-|worker_timeout|number|seconds|Time without a request until an appendix_server goes into hubernation|
-|port|integer|port|5555|The port the socket server listens|
-|max_age|number or 'infinity'|seconds|infinity|The age after which data is deleted|
+|worker_timeout|number|seconds|1|time without a request until an appendix_server goes into hibernation|
+|port|integer|port|5555|the port the socket server listens|
+|max_age|number or 'infinity'|seconds|infinity|the age after which data is deleted|
 
 # Memory consumption
 
 The Erlang VM with an empty Poe server takes about 8MB of RAM.
-When adding data, Poe starts appendix_server instances. An empty or hibernating one takes about 10KB.
-As they "fill up", each message takes 12 Byte of RAM so 100 000 messages (the default capacity) takes about 1,14 MB.
+When adding data, Poe starts appendix_server instances. An empty or hibernating one takes about 10 KB.
+As they "fill up", each message takes 12 Byte of RAM so 100 000 messages (the default capacity) take about 1,14 MB.
 When writing there is an buffer holding messages that are not written to disk yet (default size is 100). Those unwritten messages are also kept in RAM.
 
-# Performance
+# Benchmarks
 
 ## Setup
 
