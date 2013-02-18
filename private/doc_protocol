@@ -1,0 +1,19 @@
+poe:start().
+P1 = poe:put(<<"the_topic">>, <<"hello">>).
+P2 = poe:put(<<"the_topic">>, <<"world!">>).
+{P1, <<"hello">>} = poe:next(<<"the_topic">>, 0).
+{P2, <<"world!">>} = poe:next(<<"the_topic">>, P1).
+poe:next(<<"the_topic">>, P2).
+poe:status().
+[poe:put(<<"another_topic">>, <<"test">>)||N<-lists:seq(1, 100001)].
+poe:status().
+poe:print_status().
+q().
+
+
+Socket = poe_protocol:socket("127.0.0.1", 5555).
+poe_protocol:write(<<"my_shiny_topic">>, [<<"msg1">>, <<"msg2">>, <<"msg3">>], Socket).
+poe_protocol:write(<<"my_shiny_topic">>, [<<"msg4">>, <<"msg5">>], Socket).
+poe_protocol:read(<<"my_shiny_topic">>, 0, 2, Socket).
+poe_protocol:read(<<"my_shiny_topic">>, 1361045443917270, 10, Socket).
+poe_protocol:read(<<"my_shiny_topic">>, 1361045443918321, 10, Socket).
